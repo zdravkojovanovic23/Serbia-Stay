@@ -1,0 +1,574 @@
+/**
+ * EasyStay - Main JavaScript File
+ * Contains general functionality for the application
+ */
+
+// Document ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize any existing date pickers
+    initializeDatePickers();
+    
+    // Setup image management if on admin page
+    if (document.querySelector('.image-management')) {
+        setupImageManagement();
+    }
+    
+    // Setup apartment search if on search page
+    if (document.querySelector('.apartment-search-form')) {
+        setupApartmentSearch();
+    }
+    
+    // Auto-dismiss alerts after 5 seconds
+    setTimeout(function() {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(function(alert) {
+            const bsAlert = new bootstrap.Alert(alert);
+            bsAlert.close();
+        });
+    }, 5000);
+});
+
+/**
+ * Initialize all date pickers
+ */
+function initializeDatePickers() {
+    // Find all elements with datepicker class
+    const datepickers = document.querySelectorAll('.datepicker');
+    
+    if (datepickers.length > 0) {
+        datepickers.forEach(function(picker) {
+            flatpickr(picker, {
+                dateFormat: "Y-m-d",
+                locale: "sr",
+                minDate: "today",
+                disableMobile: true
+            });
+        });
+    }
+}
+
+/**
+ * Sets up AJAX image management for apartment images
+ */
+function setupImageManagement() {
+    const imageUploadForm = document.getElementById('image-upload-form');
+    const imageGallery = document.getElementById('image-gallery');
+    
+    if (imageUploadForm) {
+        imageUploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const apartmentId = this.getAttribute('data-apartment-id');
+            const uploadUrl = this.getAttribute('action');
+            
+            fetch(uploadUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Refresh the image gallery
+                    loadImages(apartmentId);
+                    // Reset the form
+                    imageUploadForm.reset();
+                    // Show success message
+                    showNotification(data.message, 'success');
+                } else {
+                    showNotification(data.message, 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('Greška prilikom otpremanja slike.', 'danger');
+            });
+        });
+    }
+    
+    // Handle delete image button clicks
+    if (imageGallery) {
+        imageGallery.addEventListener('click', function(e) {
+            if (e.target.classList.contains('delete-image-btn') || e.target.closest('.delete-image-btn')) {
+                e.preventDefault();
+                
+                const btn = e.target.classList.contains('delete-image-btn') ? e.target : e.target.closest('.delete-image-btn');
+                const imageId = btn.getAttribute('data-image-id');
+                const deleteUrl = btn.getAttribute('href');
+                
+                if (confirm('Da li ste sigurni da želite da obrišete ovu sliku?')) {
+                    fetch(deleteUrl, {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Remove the image card from the gallery
+                            const imageCard = btn.closest('.image-card');
+                            imageCard.remove();
+                            // Show success message
+                            showNotification(data.message, 'success');
+                        } else {
+                            showNotification(data.message, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        showNotification('Greška prilikom brisanja slike.', 'danger');
+                    });
+                }
+            }
+            
+            // Handle set primary image button clicks
+            if (e.target.classList.contains('set-primary-btn') || e.target.closest('.set-primary-btn')) {
+                e.preventDefault();
+                
+                const btn = e.target.classList.contains('set-primary-btn') ? e.target : e.target.closest('.set-primary-btn');
+                const imageId = btn.getAttribute('data-image-id');
+                const setPrimaryUrl = btn.getAttribute('href');
+                
+                fetch(setPrimaryUrl, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Remove primary badge from all images
+                        const primaryBadges = imageGallery.querySelectorAll('.primary-badge');
+                        primaryBadges.forEach(badge => badge.classList.add('d-none'));
+                        
+                        // Add primary badge to the new primary image
+                        const newPrimaryBadge = btn.closest('.image-card').querySelector('.primary-badge');
+                        if (newPrimaryBadge) {
+                            newPrimaryBadge.classList.remove('d-none');
+                        }
+                        
+                        // Update button states
+                        const setPrimaryBtns = imageGallery.querySelectorAll('.set-primary-btn');
+                        setPrimaryBtns.forEach(setPrimaryBtn => {
+                            setPrimaryBtn.classList.remove('d-none');
+                        });
+                        btn.classList.add('d-none');
+                        
+                        // Show success message
+                        showNotification(data.message, 'success');
+                    } else {
+                        showNotification(data.message, 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showNotification('Greška prilikom postavljanja primarne slike.', 'danger');
+                });
+            }
+        });
+    }
+}
+
+/**
+ * Load apartment images via AJAX
+ * 
+ * @param {Number} apartmentId Apartment ID
+ */
+function loadImages(apartmentId) {
+    const imageGallery = document.getElementById('image-gallery');
+    const loadUrl = imageGallery.getAttribute('data-load-url') + '/' + apartmentId;
+    
+    fetch(loadUrl)
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Clear existing gallery content
+            imageGallery.innerHTML = '';
+            
+            // Add new images
+            data.images.forEach(image => {
+                const imageCard = document.createElement('div');
+                imageCard.className = 'col-md-4 mb-3 image-card';
+                
+                imageCard.innerHTML = `
+                    <div class="card">
+                        <div class="position-relative">
+                            <img src="${image.url}" class="card-img-top" alt="Apartment Image">
+                            <span class="badge bg-primary position-absolute top-0 end-0 m-2 primary-badge ${image.is_primary ? '' : 'd-none'}">Primary</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <a href="/images/delete/${image.id}" class="btn btn-sm btn-danger delete-image-btn" data-image-id="${image.id}">
+                                    <i class="fas fa-trash"></i> Delete
+                                </a>
+                                <a href="/images/set-primary/${image.id}" class="btn btn-sm btn-primary set-primary-btn ${image.is_primary ? 'd-none' : ''}" data-image-id="${image.id}">
+                                    <i class="fas fa-star"></i> Set as Primary
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                imageGallery.appendChild(imageCard);
+            });
+            
+            if (data.images.length === 0) {
+                imageGallery.innerHTML = '<div class="col-12"><div class="alert alert-info">No images uploaded yet.</div></div>';
+            }
+        } else {
+            imageGallery.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error loading images.</div></div>';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        imageGallery.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error loading images.</div></div>';
+    });
+}
+
+/**
+ * Sets up AJAX search functionality for apartments
+ */
+function setupApartmentSearch() {
+    const searchForm = document.querySelector('.apartment-search-form');
+    const resultsContainer = document.getElementById('search-results');
+    const loadMoreBtn = document.getElementById('load-more-btn');
+    
+    let currentOffset = 0;
+    const limit = 6;
+    
+    if (searchForm) {
+        searchForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Reset offset when performing a new search
+            currentOffset = 0;
+            
+            // Build query parameters from form
+            const formData = new FormData(searchForm);
+            formData.append('ajax', 'true');
+            formData.append('limit', limit);
+            formData.append('offset', currentOffset);
+            
+            const queryParams = new URLSearchParams(formData).toString();
+            const searchUrl = '/apartments/search?' + queryParams;
+            
+            // Show loading indicator
+            resultsContainer.innerHTML = '<div class="col-12 text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+            
+            // Fetch search results
+            fetch(searchUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displaySearchResults(data.apartments, data.total);
+                } else {
+                    resultsContainer.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error performing search.</div></div>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                resultsContainer.innerHTML = '<div class="col-12"><div class="alert alert-danger">Error performing search.</div></div>';
+            });
+        });
+    }
+    
+    // Load more button click handler
+    if (loadMoreBtn) {
+        loadMoreBtn.addEventListener('click', function() {
+            // Increment offset to get next batch of results
+            currentOffset += limit;
+            
+            // Build query parameters from form
+            const formData = new FormData(searchForm);
+            formData.append('ajax', 'true');
+            formData.append('limit', limit);
+            formData.append('offset', currentOffset);
+            
+            const queryParams = new URLSearchParams(formData).toString();
+            const searchUrl = '/apartments/search?' + queryParams;
+            
+            // Show loading indicator on button
+            loadMoreBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Loading...';
+            loadMoreBtn.disabled = true;
+            
+            // Fetch additional results
+            fetch(searchUrl)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    appendSearchResults(data.apartments, data.total);
+                } else {
+                    showNotification('Greška prilikom učitavanja dodatnih rezultata.', 'danger');
+                }
+                
+                // Reset button state
+                loadMoreBtn.innerHTML = 'Učitaj još';
+                loadMoreBtn.disabled = false;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showNotification('Greška prilikom učitavanja dodatnih rezultata.', 'danger');
+                
+                // Reset button state
+                loadMoreBtn.innerHTML = 'Učitaj još';
+                loadMoreBtn.disabled = false;
+            });
+        });
+    }
+}
+
+/**
+ * Display search results in the results container
+ * 
+ * @param {Array} apartments Array of apartment objects
+ * @param {Number} total Total number of results
+ */
+function displaySearchResults(apartments, total) {
+    const resultsContainer = document.getElementById('search-results');
+    const loadMoreBtn = document.getElementById('load-more-btn');
+    const resultsCountEl = document.getElementById('results-count');
+    
+    // Clear results container
+    resultsContainer.innerHTML = '';
+    
+    if (apartments.length === 0) {
+        resultsContainer.innerHTML = '<div class="col-12"><div class="alert alert-info">Nema pronađenih apartmana koji odgovaraju vašim kriterijumima.</div></div>';
+        loadMoreBtn.classList.add('d-none');
+        if (resultsCountEl) {
+            resultsCountEl.textContent = '0';
+        }
+        return;
+    }
+    
+    // Add each apartment to the results
+    apartments.forEach(apartment => {
+        const apartmentCard = createApartmentCard(apartment);
+        resultsContainer.appendChild(apartmentCard);
+    });
+    
+    // Update results count
+    if (resultsCountEl) {
+        resultsCountEl.textContent = total;
+    }
+    
+    // Show/hide load more button
+    if (apartments.length < total) {
+        loadMoreBtn.classList.remove('d-none');
+    } else {
+        loadMoreBtn.classList.add('d-none');
+    }
+}
+
+/**
+ * Append additional search results to the existing results
+ * 
+ * @param {Array} apartments Array of apartment objects
+ * @param {Number} total Total number of results
+ */
+function appendSearchResults(apartments, total) {
+    const resultsContainer = document.getElementById('search-results');
+    const loadMoreBtn = document.getElementById('load-more-btn');
+    
+    if (apartments.length === 0) {
+        loadMoreBtn.classList.add('d-none');
+        return;
+    }
+    
+    // Add each apartment to the results
+    apartments.forEach(apartment => {
+        const apartmentCard = createApartmentCard(apartment);
+        resultsContainer.appendChild(apartmentCard);
+    });
+    
+    // Show/hide load more button based on whether we've loaded all results
+    const loadedCount = resultsContainer.querySelectorAll('.apartment-card').length;
+    if (loadedCount >= total) {
+        loadMoreBtn.classList.add('d-none');
+    } else {
+        loadMoreBtn.classList.remove('d-none');
+    }
+}
+
+/**
+ * Create apartment card HTML element
+ * 
+ * @param {Object} apartment Apartment data
+ * @return {Element} HTML div element containing apartment card
+ */
+function createApartmentCard(apartment) {
+    const col = document.createElement('div');
+    col.className = 'col-lg-4 col-md-6 mb-4';
+    
+    // Create image URL
+    const imageUrl = apartment.image 
+        ? `/uploads/${apartment.image}` 
+        : '';
+    
+    col.innerHTML = `
+        <div class="card apartment-card h-100">
+            <div class="apartment-image">
+                ${apartment.image 
+                    ? `<img src="${imageUrl}" class="card-img-top" alt="${apartment.title}">` 
+                    : `<div class="no-image-placeholder">
+                         <i class="fas fa-hotel"></i>
+                         <span>Nema slike</span>
+                       </div>`
+                }
+                <div class="price-tag">
+                    <span>${parseFloat(apartment.price_per_night).toLocaleString('sr-RS')} RSD</span>
+                    <small>po noći</small>
+                </div>
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">${apartment.title}</h5>
+                <p class="card-text location">
+                    <i class="fas fa-map-marker-alt"></i> ${apartment.city}
+                </p>
+                <p class="card-text features">
+                    <span><i class="fas fa-users"></i> ${apartment.capacity} osoba</span>
+                    <span><i class="fas fa-bed"></i> ${apartment.rooms} ${apartment.rooms == 1 ? 'soba' : 'sobe'}</span>
+                </p>
+                <a href="/apartments/view/${apartment.id}" class="btn btn-outline-primary mt-2">Pogledaj detalje</a>
+            </div>
+        </div>
+    `;
+    
+    return col;
+}
+
+/**
+ * Initialize date picker for reservation
+ * 
+ * @param {Array} availableDates Array of available date objects
+ * @param {Number} pricePerNight Price per night
+ */
+function initializeDatePicker(availableDates, pricePerNight) {
+    const checkInEl = document.getElementById('check_in');
+    const checkOutEl = document.getElementById('check_out');
+    const nightsEl = document.getElementById('nights');
+    const totalPriceEl = document.getElementById('total_price');
+    const nightsPriceEl = document.getElementById('nights_price');
+    const totalPriceInputEl = document.getElementById('total_price_input');
+    
+    if (!checkInEl || !checkOutEl) return;
+    
+    // Create array of available dates in YYYY-MM-DD format
+    const enabledDates = availableDates.map(date => date.date);
+    
+    // Initialize check-in date picker
+    const checkInPicker = flatpickr(checkInEl, {
+        dateFormat: "Y-m-d",
+        locale: "sr",
+        minDate: "today",
+        enable: enabledDates,
+        onChange: function(selectedDates, dateStr) {
+            // Update check-out date picker with new minimum date
+            checkOutPicker.set('minDate', dateStr);
+            
+            // Clear check-out date if it's before the new check-in date
+            if (checkOutPicker.selectedDates[0] && 
+                checkOutPicker.selectedDates[0] < selectedDates[0]) {
+                checkOutPicker.clear();
+            }
+            
+            updatePriceCalculation();
+        }
+    });
+    
+    // Initialize check-out date picker
+    const checkOutPicker = flatpickr(checkOutEl, {
+        dateFormat: "Y-m-d",
+        locale: "sr",
+        minDate: "today",
+        enable: enabledDates,
+        onChange: function(selectedDates) {
+            updatePriceCalculation();
+        }
+    });
+    
+    // Update price breakdown
+    function updatePriceCalculation() {
+        if (checkInPicker.selectedDates[0] && checkOutPicker.selectedDates[0]) {
+            const startDate = checkInPicker.selectedDates[0];
+            const endDate = checkOutPicker.selectedDates[0];
+            
+            const nights = calculateNights(startDate, endDate);
+            
+            if (nights > 0) {
+                const totalPrice = nights * pricePerNight;
+                
+                // Update display
+                nightsEl.textContent = nights;
+                nightsPriceEl.textContent = (nights * pricePerNight).toLocaleString('sr-RS');
+                totalPriceEl.textContent = totalPrice.toLocaleString('sr-RS');
+                
+                // Update hidden input
+                if (totalPriceInputEl) {
+                    totalPriceInputEl.value = totalPrice;
+                }
+                
+                // Show price breakdown
+                document.querySelector('.price-breakdown').classList.remove('d-none');
+            } else {
+                // Hide price breakdown for invalid date selection
+                document.querySelector('.price-breakdown').classList.add('d-none');
+            }
+        } else {
+            // Hide price breakdown if dates not selected
+            document.querySelector('.price-breakdown').classList.add('d-none');
+        }
+    }
+}
+
+/**
+ * Calculate number of nights between two dates
+ * 
+ * @param {Date} startDate Check-in date
+ * @param {Date} endDate Check-out date
+ * @return {Number} Number of nights
+ */
+function calculateNights(startDate, endDate) {
+    const oneDay = 24 * 60 * 60 * 1000; // hours * minutes * seconds * milliseconds
+    const diffDays = Math.round(Math.abs((endDate - startDate) / oneDay));
+    return diffDays;
+}
+
+/**
+ * Format date as YYYY-MM-DD for database
+ * 
+ * @param {Date} date Date object
+ * @return {String} Formatted date string
+ */
+function formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+/**
+ * Show a notification message
+ * 
+ * @param {String} message Message text
+ * @param {String} type Message type (success, danger, warning, info)
+ */
+function showNotification(message, type = 'info') {
+    // Create alert element
+    const alertEl = document.createElement('div');
+    alertEl.className = `alert alert-${type} alert-dismissible fade show`;
+    alertEl.role = 'alert';
+    alertEl.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    // Insert at the top of the content
+    const mainContent = document.querySelector('main .container');
+    if (mainContent) {
+        mainContent.insertBefore(alertEl, mainContent.firstChild);
+    } else {
+        document.querySelector('main').insertAdjacentElement('afterbegin', alertEl);
+    }
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        const bsAlert = new bootstrap.Alert(alertEl);
+        bsAlert.close();
+    }, 5000);
+}
